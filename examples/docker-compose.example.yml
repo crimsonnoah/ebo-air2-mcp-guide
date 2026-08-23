@@ -1,0 +1,15 @@
+services:
+  ebo-engine:
+    image: ghcr.io/playcolors-co/ebo-engine:latest
+    platform: linux/amd64
+    container_name: ebo-engine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8098:8098"  # token-guarded data API
+      - "127.0.0.1:8100:8100"  # token-guarded MCP; use a secure tunnel for remote clients
+      - "8554:8554"            # optional RTSP camera
+    volumes:
+      - ./data:/data
+    environment:
+      EBO_MAX_SPEED: "80"
+      EBO_MAX_SECONDS: "30.0"
