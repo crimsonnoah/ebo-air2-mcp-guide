@@ -1,0 +1,22 @@
+{
+  "email": "YOUR_EBO_EMAIL",
+  "password": "YOUR_EBO_PASSWORD",
+  "payload_key": "YOUR_APP_PAYLOAD_KEY",
+  "sign_key": "YOUR_APP_SIGN_KEY",
+  "api_token": "YOUR_LONG_RANDOM_API_TOKEN",
+  "region": "GB",
+  "host": "ebox-eu.enabotserverintl.com",
+  "robot_id": 0,
+  "host_ip": "YOUR_SERVER_LAN_IP",
+  "video": true,
+  "audio": true,
+  "talk": false,
+  "audio_codec": "8",
+  "mcp": true,
+  "log_level": "info",
+  "standby_after_minutes": 5,
+  "video_max_height": 720,
+  "video_fps": 20,
+  "video_bitrate": 2500,
+  "video_preset": "ultrafast"
+}
