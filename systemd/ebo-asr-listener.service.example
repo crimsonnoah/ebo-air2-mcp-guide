@@ -1,0 +1,25 @@
+[Unit]
+Description=EBO microphone ASR listener
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ebo-air2-mcp-guide
+Environment=EBO_DATA_DIR=/opt/ha-enabot/data
+Environment=EBO_ASR_MODEL=small
+Environment=EBO_ASR_LANGUAGE=zh
+Environment=EBO_ASR_BEAM_SIZE=3
+Environment=EBO_ASR_END_SILENCE=1.0
+# Optional delivery adapter; otherwise transcripts are written to the journal.
+# Environment=EBO_ASR_WEBHOOK_URL=http://127.0.0.1:8200/ebo-asr
+# Environment=EBO_ASR_WEBHOOK_TOKEN_FILE=/opt/ha-enabot/data/asr-webhook-token
+# Or pipe each transcript to a program on stdin:
+# Environment="EBO_ASR_COMMAND=/usr/local/bin/handle-ebo-transcript"
+ExecStart=/opt/ebo-air2-mcp-guide/asr-venv/bin/python /opt/ebo-air2-mcp-guide/scripts/ebo_asr_listener.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
