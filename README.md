@@ -8,6 +8,14 @@
 
 这个项目记录一套已经在 **EBO Air 2** 上实际验证过的方案，让支持 MCP 的 AI 客户端通过一个受保护的桥接服务控制机器人。
 
+## 从这里开始
+
+- [完整部署教程](docs/deployment-guide.md)
+- [Claude Code、Codex 与 API 客户端设置](docs/client-setup.md)
+- [故障排查](docs/troubleshooting.md)
+- [安全政策](SECURITY.md)
+- [脱敏配置示例](examples)
+
 目前已验证：
 
 - 摄像头查看与机器人状态读取
@@ -107,6 +115,14 @@ Cloud-hosted clients cannot reach a local 127.0.0.1 endpoint. Use authenticated 
 ### Safety
 
 This is an unofficial project. Test movement on a flat, open floor away from stairs and edges. Keep the robot supervised while validating a new installation. Software stop is not a hardware emergency stop.
+
+## Start here
+
+- [Deployment guide](docs/deployment-guide.md)
+- [MCP client setup](docs/client-setup.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Security policy](SECURITY.md)
+- [Sanitized examples](examples)
 
 ## Project status
 
