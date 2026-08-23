@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://api.fish.audio/v1/tts",
+  "api_key": "YOUR_FISH_AUDIO_API_KEY",
+  "voice_id": "YOUR_FISH_AUDIO_VOICE_ID",
+  "model": "s2.1-pro-free",
+  "speed": 0.9
+}
