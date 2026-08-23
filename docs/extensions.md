@@ -1,0 +1,145 @@
+# Tested MCP extensions
+
+This directory adds the features verified during the EBO Air 2 project:
+
+- movement caps of speed 80 and 30 seconds
+- reliable three-frame software stop
+- ten single-cycle Skill Actions
+- twelve Skill Expressions
+- Fish Audio WAV TTS through the existing RTC talk channel
+- a continuous faster-whisper microphone listener
+
+The drop-in MCP file is based on upstream `Playcolors-co/ha-enabot` version 0.26.100, file SHA `54cf4195ac5fc8c75f7719a63cc7e08e39cefcca`. Review changes carefully before applying it to a later upstream release.
+
+## 1. Install the MCP extension
+
+Clone the upstream engine and this guide next to each other, or download the patch and installer:
+
+```bash
+git clone https://github.com/Playcolors-co/ha-enabot.git /opt/ha-enabot
+git clone https://github.com/crimsonnoah/ebo-air2-mcp-guide.git /opt/ebo-air2-mcp-guide
+sudo bash /opt/ebo-air2-mcp-guide/scripts/install-mcp-extension.sh /opt/ha-enabot
+```
+
+The installer creates a timestamped backup and runs Python syntax validation.
+
+In `/opt/ha-enabot/docker-compose.yml`, build from the local source:
+
+```yaml
+services:
+  ebo-engine:
+    # image: ghcr.io/playcolors-co/ebo-engine:latest
+    build: ./ebo
+```
+
+Expose MCP only where needed. For a same-host client, bind it to loopback:
+
+```yaml
+ports:
+  - "127.0.0.1:8100:8100"
+```
+
+Ensure `data/options.json` has `"mcp": true`. Then rebuild:
+
+```bash
+cd /opt/ha-enabot
+docker compose up -d --build ebo-engine
+docker compose logs --since=2m ebo-engine | grep -Ei 'mcp|8100|RTM|RTC'
+```
+
+## 2. Actions and expressions
+
+The new tools are:
+
+- `ebo_action(action=...)`
+- `ebo_expression(expression=...)`
+
+Actions require a recent `ebo_look`, clear floor space, and a robot that is not docked. They run one firmware cycle and normally finish without `ebo_stop`.
+
+Expressions wake the robot if necessary, then use opcode 103003 with one `emojiId`.
+
+These IDs were verified on EBO Air 2. Treat other models as experimental.
+
+## 3. Fish Audio TTS
+
+Copy the sanitized template into the private runtime directory:
+
+```bash
+cp /opt/ebo-air2-mcp-guide/examples/fishaudio-config.example.json \
+  /opt/ha-enabot/data/fishaudio-config.json
+chmod 600 /opt/ha-enabot/data/fishaudio-config.json
+```
+
+Replace `YOUR_FISH_AUDIO_API_KEY` and `YOUR_FISH_AUDIO_VOICE_ID`, and set `"talk": true` in `data/options.json`.
+
+The extended `ebo_say`:
+
+1. reuses a healthy RTC session instead of rebuilding it for every sentence;
+2. opens camera/RTC only when it is actually off;
+3. asks Fish Audio for a 16 kHz WAV;
+4. submits the file to the bridge's existing `talk` command;
+5. maintains `data/ebo-speaking-until` so the ASR listener ignores EBO's own voice.
+
+Test without movement:
+
+```text
+Call ebo_say and say: The EBO voice test is working.
+```
+
+Useful logs:
+
+```bash
+docker compose logs --since=5m ebo-engine \
+  | grep -E '\[say-timing\]|\[talk\]|\[RTC\]'
+```
+
+## 4. Local faster-whisper ASR
+
+The listener runs on the Docker host and reads the RTSP audio track through ffmpeg inside the container.
+
+```bash
+cd /opt/ebo-air2-mcp-guide
+python3 -m venv asr-venv
+asr-venv/bin/pip install -r requirements-asr.txt
+```
+
+The sample service expects the upstream engine at `/opt/ha-enabot` and this guide at `/opt/ebo-air2-mcp-guide`. Install it:
+
+```bash
+sudo cp systemd/ebo-asr-listener.service.example /etc/systemd/system/ebo-asr-listener.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ebo-asr-listener.service
+sudo journalctl -u ebo-asr-listener.service -f
+```
+
+The default output is the journal. To connect transcripts to an AI/chat bridge, configure exactly one adapter in the service:
+
+- `EBO_ASR_WEBHOOK_URL` plus an optional bearer token; or
+- `EBO_ASR_COMMAND`, which receives the transcript on stdin.
+
+There are no Telegram usernames, tmux sessions, or personal paths in the public listener.
+
+Tested latency-oriented defaults:
+
+| Setting | Value |
+|---|---:|
+| model | `small` |
+| compute | CPU int8 |
+| language | `zh` |
+| beam size | 3 |
+| end silence | 1.0 s |
+| VAD | on |
+
+Non-empty partial PCM frames are padded with silence. Only a zero-byte frame triggers recovery. After repeated empty streams, the listener cycles microphone listen off/on without unnecessarily rebuilding a healthy RTC session.
+
+## 5. Roll back
+
+Stop the container, restore the timestamped `ebo_mcp.py.backup-*` file, and rebuild:
+
+```bash
+cd /opt/ha-enabot
+cp ebo/ebo_mcp.py.backup-YYYYMMDD-HHMMSS ebo/ebo_mcp.py
+docker compose up -d --build ebo-engine
+```
+
+Keep all credentials in `data/`; this repository's `.gitignore` excludes the common secret paths.
