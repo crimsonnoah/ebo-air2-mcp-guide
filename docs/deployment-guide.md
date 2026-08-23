@@ -152,3 +152,8 @@ docker compose logs --since=2m ebo-engine
 ```
 
 Back up only to a private location. Never attach the real options file to a public GitHub issue.
+
+
+## Optional tested extensions
+
+After the base bridge is working, continue with the [tested extension pack](extensions.md) for Skill Actions, expressions, Fish Audio TTS, and local faster-whisper ASR.
