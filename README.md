@@ -11,6 +11,7 @@
 ## 从这里开始
 
 - [完整部署教程](docs/deployment-guide.md)
+- [实测功能扩展包：Actions、Expressions、Fish TTS 与本地 ASR](docs/extensions.md)
 - [Claude Code、Codex 与 API 客户端设置](docs/client-setup.md)
 - [故障排查](docs/troubleshooting.md)
 - [安全政策](SECURITY.md)
@@ -119,6 +120,7 @@ This is an unofficial project. Test movement on a flat, open floor away from sta
 ## Start here
 
 - [Deployment guide](docs/deployment-guide.md)
+- [Tested extension pack: Actions, Expressions, Fish TTS, and local ASR](docs/extensions.md)
 - [MCP client setup](docs/client-setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security policy](SECURITY.md)
@@ -126,7 +128,7 @@ This is an unofficial project. Test movement on a flat, open floor away from sta
 
 ## Project status
 
-The core robot bridge and MCP tools have been validated on EBO Air 2. Deployment, client setup, troubleshooting, and sanitized configuration examples will be added as separate documents.
+The core robot bridge and MCP tools have been validated on EBO Air 2. Deployment, client setup, tested extensions, troubleshooting, and sanitized configuration examples are included.
 
 ## Credits and license
 
