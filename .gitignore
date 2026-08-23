@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# EBO local secrets and runtime data
+data/
+options.json
+fishaudio-config.json
+ebo-speaking-until
+*.apk
+*.keystore
+*.jks
