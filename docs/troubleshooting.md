@@ -3,7 +3,7 @@
 Start with:
 
 ```bash
-cd /opt/ebo-air2-mcp
+cd /opt/ha-enabot
 docker compose ps
 docker compose logs --since=10m ebo-engine | tail -300
 ```
@@ -54,6 +54,9 @@ Remember that an AI may not call `ebo_stop` until it has finished reasoning. For
 ## Camera shows an old frame
 
 - Call `ebo_wake`, wait 2–3 seconds, then call `ebo_look` again.
+- If every image from `ebo_watch` is identical to an older scene, wait for the
+  RTC camera to reconnect and retry the observation. The tool samples live
+  snapshots but cannot make a stale upstream camera frame fresh.
 - Confirm `[RTC] connected` and that fresh video frames appear in logs.
 - A cached Home Assistant/dashboard image is not proof that the live camera is updating.
 
