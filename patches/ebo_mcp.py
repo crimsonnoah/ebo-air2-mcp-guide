@@ -127,7 +127,7 @@ def _photo_label(value: str) -> str:
 
 
 @mcp.tool()
-async def ebo_photo(node: str = "", label: str = "") -> list[object]:
+async def ebo_photo(node: str = "", label: str = ""):
     """Take and KEEP a photo from EBO's current live camera.
 
     Unlike ebo_look, which is a temporary safety view, this deliberately saves
