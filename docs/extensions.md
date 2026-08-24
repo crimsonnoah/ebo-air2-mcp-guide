@@ -77,6 +77,25 @@ container rebuilds and are already covered by the repository's `data/` ignore
 rule. This captures the current live JPEG on the server; it does not add the
 photo to EBO HOME or the robot's SD-card album.
 
+### Watching short changes
+
+`ebo_watch` samples the live camera over a short period and returns timestamped
+JPEG frames in chronological order so an image-capable agent can compare what
+changed:
+
+```text
+ebo_watch(node="ebo", seconds=6, interval=1)
+```
+
+The default observation is six seconds with one requested frame per second.
+For safety and response-size control, the server caps observations at 12 seconds
+and 12 frames. When that cap applies, samples are spread across the full requested
+duration. Watch frames are temporary and are not added to `/data/ebo-photos/`;
+call `ebo_photo` to preserve a chosen moment.
+
+This is ordered still-frame observation, not continuous video understanding or
+an EBO HOME recording. Wake the camera first if EBO is asleep.
+
 ## 3. Fish Audio TTS
 
 Copy the sanitized template into the private runtime directory:
