@@ -60,6 +60,23 @@ Expressions wake the robot if necessary, then use opcode 103003 with one `emojiI
 
 These IDs were verified on EBO Air 2. Treat other models as experimental.
 
+### Saving photos
+
+`ebo_look` remains a temporary safety view and does not fill the disk with a
+photo before every move. When an agent deliberately wants to keep what it sees,
+call `ebo_photo` instead:
+
+```text
+ebo_photo(node="ebo", label="optional-memory-name")
+```
+
+The tool returns both an image preview and the saved path. By default photos are
+written privately to `/data/ebo-photos/`, which corresponds to
+`./data/ebo-photos/` on a host using the example Compose volume. They survive
+container rebuilds and are already covered by the repository's `data/` ignore
+rule. This captures the current live JPEG on the server; it does not add the
+photo to EBO HOME or the robot's SD-card album.
+
 ## 3. Fish Audio TTS
 
 Copy the sanitized template into the private runtime directory:
