@@ -4,6 +4,8 @@ This directory adds the features verified during the EBO Air 2 project:
 
 - movement caps of speed 80 and 30 seconds
 - reliable three-frame software stop
+- persistent photos with an immediate image preview
+- short ordered-frame observation for visual change detection
 - ten single-cycle Skill Actions
 - twelve Skill Expressions
 - Fish Audio WAV TTS through the existing RTC talk channel
@@ -94,7 +96,10 @@ duration. Watch frames are temporary and are not added to `/data/ebo-photos/`;
 call `ebo_photo` to preserve a chosen moment.
 
 This is ordered still-frame observation, not continuous video understanding or
-an EBO HOME recording. Wake the camera first if EBO is asleep.
+an EBO HOME recording. Wake the camera first if EBO is asleep. Live Air 2
+testing confirmed that an image-capable agent could compare the ordered frames
+and identify gesture changes. Immediately after waking, the first observation
+may still contain cached frames; wait 2–3 seconds for RTC video and retry.
 
 ## 3. Fish Audio TTS
 
