@@ -33,6 +33,8 @@ MAX_SPEED = int(os.environ.get("EBO_MAX_SPEED", "80"))
 MAX_SECONDS = float(os.environ.get("EBO_MAX_SECONDS", "30.0"))
 LOOK_TTL = 8.0
 PHOTO_DIR = os.environ.get("EBO_PHOTO_DIR", "/data/ebo-photos")
+WATCH_MAX_SECONDS = float(os.environ.get("EBO_WATCH_MAX_SECONDS", "12.0"))
+WATCH_MAX_FRAMES = int(os.environ.get("EBO_WATCH_MAX_FRAMES", "12"))
 
 # Bearer-token auth: the client must present the add-on's api_token. Without a token we refuse to
 # start (an unauthenticated robot-driving endpoint on the LAN would be unsafe).
@@ -116,6 +118,62 @@ async def ebo_look(node: str = "") -> Image:
         raise RuntimeError("no snapshot (robot asleep? call ebo_wake) — HTTP %s" % r.status_code)
     _last_look[node] = time.time()
     return Image(data=r.content, format="jpeg")
+
+
+@mcp.tool()
+async def ebo_watch(node: str = "", seconds: float = 6.0, interval: float = 1.0):
+    """Observe a short scene as an ordered sequence of live JPEG frames.
+
+    This is the AI-friendly equivalent of watching a short clip: it samples the
+    live camera over time and returns timestamped images in chronological order.
+    Frames are temporary and are not written to the photo directory. Use
+    ebo_photo to keep one permanently.
+    """
+    robots = await _robots()
+    node = _node(robots, node)
+    duration = max(1.0, min(float(seconds), WATCH_MAX_SECONDS))
+    requested_interval = max(0.5, min(float(interval), duration))
+
+    # Include both the beginning and end of the requested observation. If the
+    # requested cadence would produce too many frames, spread the capped number
+    # evenly across the whole duration instead of observing only its beginning.
+    frame_count = int(math.floor(duration / requested_interval)) + 1
+    frame_count = max(2, min(frame_count, WATCH_MAX_FRAMES))
+    sample_interval = duration / (frame_count - 1)
+
+    started = time.monotonic()
+    captured: list[tuple[float, bytes]] = []
+    missed: list[tuple[int, int]] = []
+    for index in range(frame_count):
+        target = started + index * sample_interval
+        delay = target - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        r = await _get("/api/snapshot", params={"node": node})
+        if r.status_code == 200 and r.content:
+            captured.append((time.monotonic() - started, r.content))
+        else:
+            missed.append((index + 1, r.status_code))
+
+    if not captured:
+        status = missed[-1][1] if missed else "unknown"
+        raise RuntimeError("no watch frames (robot asleep? call ebo_wake) — HTTP %s" % status)
+
+    _last_look[node] = time.time()
+    result = [
+        "observed %.1fs: %d/%d live frames captured in chronological order"
+        % (duration, len(captured), frame_count)
+    ]
+    if missed:
+        result.append(
+            "missed frames: "
+            + ", ".join("#%d (HTTP %s)" % item for item in missed)
+        )
+    for index, (elapsed, data) in enumerate(captured, start=1):
+        result.append("frame %d/%d at +%.1fs" % (index, len(captured), elapsed))
+        result.append(Image(data=data, format="jpeg"))
+    return result
 
 
 def _photo_label(value: str) -> str:
