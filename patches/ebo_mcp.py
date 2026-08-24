@@ -32,6 +32,7 @@ HEADERS = {"X-Enabot-Token": TOKEN}
 MAX_SPEED = int(os.environ.get("EBO_MAX_SPEED", "80"))
 MAX_SECONDS = float(os.environ.get("EBO_MAX_SECONDS", "30.0"))
 LOOK_TTL = 8.0
+PHOTO_DIR = os.environ.get("EBO_PHOTO_DIR", "/data/ebo-photos")
 
 # Bearer-token auth: the client must present the add-on's api_token. Without a token we refuse to
 # start (an unauthenticated robot-driving endpoint on the LAN would be unsafe).
@@ -115,6 +116,64 @@ async def ebo_look(node: str = "") -> Image:
         raise RuntimeError("no snapshot (robot asleep? call ebo_wake) — HTTP %s" % r.status_code)
     _last_look[node] = time.time()
     return Image(data=r.content, format="jpeg")
+
+
+def _photo_label(value: str) -> str:
+    """Make a human label safe as one filename component."""
+    safe = "".join(ch if (ch.isalnum() or ch in "-_") else "-" for ch in value.strip())
+    while "--" in safe:
+        safe = safe.replace("--", "-")
+    return safe.strip("-_")[:48]
+
+
+@mcp.tool()
+async def ebo_photo(node: str = "", label: str = "") -> list[object]:
+    """Take and KEEP a photo from EBO's current live camera.
+
+    Unlike ebo_look, which is a temporary safety view, this deliberately saves
+    the JPEG under /data/ebo-photos so it survives container restarts. It saves
+    on the server, not in the EBO HOME app or the robot's SD-card album.
+    Returns both the saved path and an image preview.
+    """
+    robots = await _robots()
+    node = _node(robots, node)
+    r = await _get("/api/snapshot", params={"node": node})
+    if r.status_code != 200 or not r.content:
+        raise RuntimeError("no photo (robot asleep? call ebo_wake) — HTTP %s" % r.status_code)
+
+    os.makedirs(PHOTO_DIR, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(PHOTO_DIR, 0o700)
+    except OSError:
+        pass
+
+    stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    suffix = _photo_label(label)
+    basename = stamp + (("_" + suffix) if suffix else "") + ".jpg"
+    path = os.path.join(PHOTO_DIR, basename)
+    if os.path.exists(path):
+        path = os.path.join(
+            PHOTO_DIR,
+            stamp + (("_" + suffix) if suffix else "") + "_%06d.jpg" % (time.time_ns() % 1_000_000),
+        )
+
+    temporary = path + ".tmp-%d" % os.getpid()
+    try:
+        with open(temporary, "wb") as output:
+            output.write(r.content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
+    _last_look[node] = time.time()
+    return [
+        "photo saved: %s" % path,
+        Image(data=r.content, format="jpeg"),
+    ]
 
 
 @mcp.tool()
