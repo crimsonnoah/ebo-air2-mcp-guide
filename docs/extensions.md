@@ -4,6 +4,7 @@ This directory adds the features verified during the EBO Air 2 project:
 
 - movement caps of speed 80 and 30 seconds
 - reliable three-frame software stop
+- explicit 0–100 speaker volume control
 - persistent photos with an immediate image preview
 - persistent continuous MP4 recording from the live RTSP stream
 - short ordered-frame observation for visual change detection
@@ -132,6 +133,19 @@ reporting that the live camera is ready. This prevents the panel's intentionally
 persisted last-good frame from being mistaken for a current view. While that
 freshness check is pending, `ebo_look`, `ebo_watch`, and `ebo_photo` refuse the
 known pre-wake image rather than presenting or saving it as live.
+
+### Speaker volume
+
+`ebo_volume(level=...)` changes EBO's `playbackVolume` from 0 (silent)
+to 100 (maximum). The level is required and out-of-range values are refused:
+
+```text
+ebo_volume(level=55, node="ebo")
+```
+
+This controls `ebo_say` and other speaker playback. It does not change the
+separate microphone/talkback listening volume. Air 2 testing found 55 comfortable
+for close-range conversation; choose a level appropriate for the room.
 
 ## 3. Configurable TTS providers
 
