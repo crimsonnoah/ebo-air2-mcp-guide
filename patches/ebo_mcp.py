@@ -16,7 +16,9 @@ import asyncio
 import json
 import math
 import os
+import subprocess
 import time
+from urllib.parse import urlparse
 
 import httpx
 from fastmcp import FastMCP
@@ -33,6 +35,8 @@ MAX_SPEED = int(os.environ.get("EBO_MAX_SPEED", "80"))
 MAX_SECONDS = float(os.environ.get("EBO_MAX_SECONDS", "30.0"))
 LOOK_TTL = 8.0
 PHOTO_DIR = os.environ.get("EBO_PHOTO_DIR", "/data/ebo-photos")
+RECORD_DIR = os.environ.get("EBO_RECORD_DIR", "/data/ebo-recordings")
+RECORD_MAX_SECONDS = float(os.environ.get("EBO_RECORD_MAX_SECONDS", "30.0"))
 WATCH_MAX_SECONDS = float(os.environ.get("EBO_WATCH_MAX_SECONDS", "12.0"))
 WATCH_MAX_FRAMES = int(os.environ.get("EBO_WATCH_MAX_FRAMES", "12"))
 WAKE_FRESH_TIMEOUT = float(os.environ.get("EBO_WAKE_FRESH_TIMEOUT", "20.0"))
@@ -48,6 +52,7 @@ mcp = FastMCP("ebo", auth=_auth)
 
 _last_look: dict[str, float] = {}
 _wake_baseline: dict[str, bytes] = {}
+_record_lock = asyncio.Lock()
 
 _DIRS = {
     "forward": (-1, 0), "back": (1, 0), "left": (0, -1), "right": (0, 1),
@@ -262,6 +267,121 @@ async def ebo_photo(node: str = "", label: str = ""):
     return [
         "photo saved: %s" % path,
         Image(data=data, format="jpeg"),
+    ]
+
+
+@mcp.tool()
+async def ebo_record(
+    node: str = "",
+    seconds: float = 10.0,
+    label: str = "",
+    include_audio: bool = True,
+):
+    """Record and KEEP a real MP4 from EBO's live RTSP stream.
+
+    Call ebo_wake first. The recording is continuous video rather than the
+    ordered still frames returned by ebo_watch. Files are stored privately
+    under /data/ebo-recordings and survive container rebuilds. A current JPEG
+    cover preview is returned with the saved path.
+    """
+    robots = await _robots()
+    node = _node(robots, node)
+    robot = next((r for r in robots if r.get("node") == node), None)
+    if not robot:
+        raise RuntimeError("robot '%s' not found" % node)
+    if str(robot.get("camera", "")).lower() != "on":
+        raise RuntimeError("camera is not live; call ebo_wake before ebo_record")
+
+    # Reject a known pre-wake cached frame before starting ffmpeg. This also
+    # provides the preview returned after a successful recording.
+    cover = await _snapshot(
+        node, wait_fresh=8.0 if node in _wake_baseline else 0.0
+    )
+    rtsp = robot.get("rtsp")
+    if not rtsp:
+        raise RuntimeError("robot has no RTSP stream URL; call ebo_wake and retry")
+
+    duration = max(1.0, min(float(seconds), RECORD_MAX_SECONDS))
+    parsed = urlparse(rtsp)
+    if not parsed.path:
+        raise RuntimeError("robot returned an invalid RTSP stream URL")
+    internal = "rtsp://127.0.0.1:%s%s" % (parsed.port or 8554, parsed.path)
+
+    os.makedirs(RECORD_DIR, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(RECORD_DIR, 0o700)
+    except OSError:
+        pass
+
+    stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    suffix = _photo_label(label)
+    stem = stamp + (("_" + suffix) if suffix else "")
+    path = os.path.join(RECORD_DIR, stem + ".mp4")
+    if os.path.exists(path):
+        path = os.path.join(
+            RECORD_DIR, stem + "_%06d.mp4" % (time.time_ns() % 1_000_000)
+        )
+    temporary = path[:-4] + ".part.mp4"
+
+    args = [
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-rtsp_transport", "tcp",
+        "-i", internal,
+        "-t", "%.3f" % duration,
+        "-map", "0:v:0",
+        "-c:v", "copy",
+    ]
+    if include_audio:
+        # The bridge publishes Opus. AAC gives the saved MP4 broad playback
+        # compatibility; '?' keeps recording valid when no mic track exists.
+        args += ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "48k"]
+    else:
+        args += ["-an"]
+    args += [
+        "-movflags", "+faststart",
+        "-y", temporary,
+    ]
+
+    async with _record_lock:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                _, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=duration + 15.0
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                raise RuntimeError("ffmpeg recording timed out")
+            if process.returncode != 0:
+                detail = stderr.decode("utf-8", "replace").strip()[-600:]
+                raise RuntimeError(
+                    "ffmpeg recording failed (exit %s): %s"
+                    % (process.returncode, detail or "no error text")
+                )
+            if not os.path.exists(temporary) or os.path.getsize(temporary) == 0:
+                raise RuntimeError("ffmpeg produced an empty recording")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+
+    size_bytes = os.path.getsize(path)
+    _last_look[node] = time.time()
+    return [
+        "video saved: %s" % path,
+        "recorded %.1fs, %.2f MiB%s"
+        % (
+            duration,
+            size_bytes / (1024 * 1024),
+            " (audio requested when available)" if include_audio else " (video only)",
+        ),
+        Image(data=cover, format="jpeg"),
     ]
 
 
