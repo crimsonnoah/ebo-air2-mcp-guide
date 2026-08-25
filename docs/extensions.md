@@ -98,8 +98,14 @@ call `ebo_photo` to preserve a chosen moment.
 This is ordered still-frame observation, not continuous video understanding or
 an EBO HOME recording. Wake the camera first if EBO is asleep. Live Air 2
 testing confirmed that an image-capable agent could compare the ordered frames
-and identify gesture changes. Immediately after waking, the first observation
-may still contain cached frames; wait 2–3 seconds for RTC video and retry.
+and identify gesture changes.
+
+The extended `ebo_wake` records the pre-wake JPEG, sends both the full wake and
+camera-on commands, and waits up to 20 seconds for different JPEG bytes before
+reporting that the live camera is ready. This prevents the panel's intentionally
+persisted last-good frame from being mistaken for a current view. While that
+freshness check is pending, `ebo_look`, `ebo_watch`, and `ebo_photo` refuse the
+known pre-wake image rather than presenting or saving it as live.
 
 ## 3. Fish Audio TTS
 
