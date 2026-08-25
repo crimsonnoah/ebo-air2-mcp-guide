@@ -11,7 +11,7 @@
 ## 从这里开始
 
 - [完整部署教程](docs/deployment-guide.md)
-- [实测功能扩展包：Actions、Expressions、Fish TTS 与本地 ASR](docs/extensions.md)
+- [实测功能扩展包：Actions、Expressions、可更换 TTS 与本地 ASR](docs/extensions.md)
 - [Claude Code、Codex 与 API 客户端设置](docs/client-setup.md)
 - [故障排查](docs/troubleshooting.md)
 - [安全政策](SECURITY.md)
@@ -25,7 +25,7 @@
 - 10 种单次 Skill Actions
 - 12 种官方表情
 - EBO 麦克风 → 本地 faster-whisper ASR
-- Fish Audio TTS → EBO 扬声器
+- 可更换的 TTS provider（Fish Audio 兼容回退或通用命令适配器）→ EBO 扬声器
 - Claude Code、Codex，以及其他支持 MCP 的客户端
 
 > [!WARNING]
@@ -90,7 +90,7 @@
 - Enabot 登录邮箱和密码
 - App payload/sign keys
 - MCP、API 或 Telegram token
-- Fish Audio API key / voice ID
+- TTS provider API key / voice ID
 - 机器人序列号、MAC、家庭公网 IP
 - 真实的 options.json、.env 或服务器日志
 
@@ -102,7 +102,7 @@
 
 This repository documents a tested community setup for connecting MCP-compatible AI clients to an **Enabot EBO Air 2** through a token-protected bridge.
 
-Verified capabilities include camera snapshots with post-wake freshness verification, live-tested ordered-frame gesture-change observation, persistent photo and continuous MP4 recording, state access, adjustable movement, normal movement stop, ten single-cycle Skill Actions, twelve official expressions, local faster-whisper ASR, and Fish Audio TTS playback through EBO.
+Verified capabilities include camera snapshots with post-wake freshness verification, live-tested ordered-frame gesture-change observation, persistent photo and continuous MP4 recording, state access, adjustable movement, normal movement stop, ten single-cycle Skill Actions, twelve official expressions, local faster-whisper ASR, and provider-neutral TTS playback through EBO (including backward-compatible Fish Audio configuration and command adapters for other vendors).
 
 ### Compatibility
 
@@ -120,7 +120,7 @@ This is an unofficial project. Test movement on a flat, open floor away from sta
 ## Start here
 
 - [Deployment guide](docs/deployment-guide.md)
-- [Tested extension pack: Actions, Expressions, Fish TTS, and local ASR](docs/extensions.md)
+- [Tested extension pack: Actions, Expressions, configurable TTS, and local ASR](docs/extensions.md)
 - [MCP client setup](docs/client-setup.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Security policy](SECURITY.md)
