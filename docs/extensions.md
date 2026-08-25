@@ -133,25 +133,58 @@ persisted last-good frame from being mistaken for a current view. While that
 freshness check is pending, `ebo_look`, `ebo_watch`, and `ebo_photo` refuse the
 known pre-wake image rather than presenting or saving it as live.
 
-## 3. Fish Audio TTS
+## 3. Configurable TTS providers
 
-Copy the sanitized template into the private runtime directory:
+`ebo_say` is provider-neutral: it opens/reuses EBO's RTC talk channel,
+asks the configured TTS provider for a 16 kHz mono PCM WAV, submits that WAV to
+the bridge, and maintains `data/ebo-speaking-until` so the ASR listener
+ignores EBO's own voice.
+
+### Existing Fish Audio installations
+
+Existing `/data/fishaudio-config.json` files continue to work automatically as a
+backward-compatible fallback. No migration is required, so installing this
+version does not change the robot's current voice.
+
+A new-style Fish configuration may instead be stored as
+`/data/ebo-tts-config.json` by adding `"provider": "fish_audio"` to the
+existing fields.
+
+### Any other provider: command adapter
+
+For ElevenLabs, MiniMax, a local model, or another service, copy the generic
+configuration:
 
 ```bash
-cp /opt/ebo-air2-mcp-guide/examples/fishaudio-config.example.json \
-  /opt/ha-enabot/data/fishaudio-config.json
-chmod 600 /opt/ha-enabot/data/fishaudio-config.json
+cp /opt/ebo-air2-mcp-guide/examples/tts-command-config.example.json \
+  /opt/ha-enabot/data/ebo-tts-config.json
+chmod 600 /opt/ha-enabot/data/ebo-tts-config.json
 ```
 
-Replace `YOUR_FISH_AUDIO_API_KEY` and `YOUR_FISH_AUDIO_VOICE_ID`, and set `"talk": true` in `data/options.json`.
+The configured command is an adapter boundary, so switching vendors does not
+require editing `ebo_mcp.py`:
 
-The extended `ebo_say`:
+1. EBO writes one UTF-8 JSON request to the adapter's stdin:
+   `{"text":"...","format":"wav","sample_rate":16000}`.
+2. The adapter calls its selected service and saves a 16 kHz mono PCM WAV
+   somewhere under `/data`.
+3. The adapter prints that absolute WAV path as the final line on stdout.
+4. Diagnostics may go to stderr; credentials stay in private `/data` files.
 
-1. reuses a healthy RTC session instead of rebuilding it for every sentence;
-2. opens camera/RTC only when it is actually off;
-3. asks Fish Audio for a 16 kHz WAV;
-4. submits the file to the bridge's existing `talk` command;
-5. maintains `data/ebo-speaking-until` so the ASR listener ignores EBO's own voice.
+Example configuration:
+
+```json
+{
+  "provider": "command",
+  "command": ["python3", "/data/tts-provider.py"],
+  "timeout": 120
+}
+```
+
+The adapter may be replaced independently for ElevenLabs, MiniMax, or another
+provider. The MCP tool name remains `ebo_say`, so the AI client and EBO
+playback path do not change. Never place provider API keys in this public
+repository.
 
 Test without movement:
 
