@@ -53,10 +53,13 @@ Remember that an AI may not call `ebo_stop` until it has finished reasoning. For
 
 ## Camera shows an old frame
 
-- Call `ebo_wake`, wait 2–3 seconds, then call `ebo_look` again.
-- If every image from `ebo_watch` is identical to an older scene, wait for the
-  RTC camera to reconnect and retry the observation. The tool samples live
-  snapshots but cannot make a stale upstream camera frame fresh.
+- Update and reinstall the current MCP extension. Its `ebo_wake` remembers the
+  pre-wake JPEG and does not report success until a different frame arrives.
+- A successful wake now says `fresh live camera frame confirmed`. If it instead
+  says the camera is not fresh yet, inspect RTC/video logs and retry wake; do not
+  treat the returned cache as a live view.
+- After an unsuccessful wake, `ebo_look`, `ebo_watch`, and `ebo_photo` refuse the
+  known stale JPEG until a new frame replaces it.
 - Confirm `[RTC] connected` and that fresh video frames appear in logs.
 - A cached Home Assistant/dashboard image is not proof that the live camera is updating.
 
