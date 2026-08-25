@@ -35,6 +35,7 @@ LOOK_TTL = 8.0
 PHOTO_DIR = os.environ.get("EBO_PHOTO_DIR", "/data/ebo-photos")
 WATCH_MAX_SECONDS = float(os.environ.get("EBO_WATCH_MAX_SECONDS", "12.0"))
 WATCH_MAX_FRAMES = int(os.environ.get("EBO_WATCH_MAX_FRAMES", "12"))
+WAKE_FRESH_TIMEOUT = float(os.environ.get("EBO_WAKE_FRESH_TIMEOUT", "20.0"))
 
 # Bearer-token auth: the client must present the add-on's api_token. Without a token we refuse to
 # start (an unauthenticated robot-driving endpoint on the LAN would be unsafe).
@@ -46,6 +47,7 @@ if TOKEN:
 mcp = FastMCP("ebo", auth=_auth)
 
 _last_look: dict[str, float] = {}
+_wake_baseline: dict[str, bytes] = {}
 
 _DIRS = {
     "forward": (-1, 0), "back": (1, 0), "left": (0, -1), "right": (0, 1),
@@ -70,6 +72,35 @@ async def _robots() -> list[dict]:
     r = await _get("/api/robots")
     r.raise_for_status()
     return r.json()
+
+
+async def _snapshot(node: str, wait_fresh: float = 0.0) -> bytes:
+    """Return a snapshot, refusing the pre-wake cached JPEG when one is known.
+
+    The panel deliberately serves its last good frame while RTC video is down.
+    Before wake we remember that JPEG in _wake_baseline; until the bytes change,
+    HTTP 200 does not prove that the camera is live.
+    """
+    baseline = _wake_baseline.get(node)
+    deadline = time.monotonic() + max(0.0, float(wait_fresh))
+    last_status = 404
+    while True:
+        r = await _get("/api/snapshot", params={"node": node})
+        last_status = r.status_code
+        if r.status_code == 200 and r.content:
+            if baseline is None or r.content != baseline:
+                _wake_baseline.pop(node, None)
+                return r.content
+
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(min(0.75, max(0.0, deadline - time.monotonic())))
+
+    if baseline is not None:
+        raise RuntimeError(
+            "camera has not produced a fresh frame after wake; refusing the cached image"
+        )
+    raise RuntimeError("no snapshot (robot asleep? call ebo_wake) — HTTP %s" % last_status)
 
 
 def _node(robots: list[dict], node: str) -> str:
@@ -113,11 +144,9 @@ async def ebo_look(node: str = "") -> Image:
     to check the path is clear. If the image is black, call ebo_wake and retry after ~2 s."""
     robots = await _robots()
     node = _node(robots, node)
-    r = await _get("/api/snapshot", params={"node": node})
-    if r.status_code != 200 or not r.content:
-        raise RuntimeError("no snapshot (robot asleep? call ebo_wake) — HTTP %s" % r.status_code)
+    data = await _snapshot(node, wait_fresh=8.0 if node in _wake_baseline else 0.0)
     _last_look[node] = time.time()
-    return Image(data=r.content, format="jpeg")
+    return Image(data=data, format="jpeg")
 
 
 @mcp.tool()
@@ -141,20 +170,24 @@ async def ebo_watch(node: str = "", seconds: float = 6.0, interval: float = 1.0)
     frame_count = max(2, min(frame_count, WATCH_MAX_FRAMES))
     sample_interval = duration / (frame_count - 1)
 
+    # Resolve any pre-wake cache before starting the observation clock. Otherwise
+    # a several-second RTC warm-up would consume the observation duration and
+    # make the remaining samples arrive in a burst.
+    initial = await _snapshot(node, wait_fresh=8.0 if node in _wake_baseline else 0.0)
     started = time.monotonic()
-    captured: list[tuple[float, bytes]] = []
+    captured: list[tuple[float, bytes]] = [(0.0, initial)]
     missed: list[tuple[int, int]] = []
-    for index in range(frame_count):
+    for index in range(1, frame_count):
         target = started + index * sample_interval
         delay = target - time.monotonic()
         if delay > 0:
             await asyncio.sleep(delay)
 
-        r = await _get("/api/snapshot", params={"node": node})
-        if r.status_code == 200 and r.content:
-            captured.append((time.monotonic() - started, r.content))
-        else:
-            missed.append((index + 1, r.status_code))
+        try:
+            data = await _snapshot(node)
+            captured.append((time.monotonic() - started, data))
+        except RuntimeError:
+            missed.append((index + 1, 503))
 
     if not captured:
         status = missed[-1][1] if missed else "unknown"
@@ -195,9 +228,7 @@ async def ebo_photo(node: str = "", label: str = ""):
     """
     robots = await _robots()
     node = _node(robots, node)
-    r = await _get("/api/snapshot", params={"node": node})
-    if r.status_code != 200 or not r.content:
-        raise RuntimeError("no photo (robot asleep? call ebo_wake) — HTTP %s" % r.status_code)
+    data = await _snapshot(node, wait_fresh=8.0 if node in _wake_baseline else 0.0)
 
     os.makedirs(PHOTO_DIR, mode=0o700, exist_ok=True)
     try:
@@ -218,7 +249,7 @@ async def ebo_photo(node: str = "", label: str = ""):
     temporary = path + ".tmp-%d" % os.getpid()
     try:
         with open(temporary, "wb") as output:
-            output.write(r.content)
+            output.write(data)
             output.flush()
             os.fsync(output.fileno())
         os.chmod(temporary, 0o600)
@@ -230,17 +261,37 @@ async def ebo_photo(node: str = "", label: str = ""):
     _last_look[node] = time.time()
     return [
         "photo saved: %s" % path,
-        Image(data=r.content, format="jpeg"),
+        Image(data=data, format="jpeg"),
     ]
 
 
 @mcp.tool()
 async def ebo_wake(node: str = "") -> str:
-    """Wake the robot and start its camera (before looking/driving). Wait ~2-3 s, then ebo_look."""
+    """Wake EBO and wait until a genuinely new camera frame replaces the saved cache."""
     robots = await _robots()
     node = _node(robots, node)
-    await _cmd(node, "camera/set", "on")
-    return f"waking '{node}' — wait ~2-3 s, then ebo_look."
+    try:
+        old = await _get("/api/snapshot", params={"node": node})
+        if old.status_code == 200 and old.content:
+            _wake_baseline[node] = old.content
+        else:
+            _wake_baseline.pop(node, None)
+    except Exception:
+        _wake_baseline.pop(node, None)
+
+    wake_code = await _cmd(node, "wake", "")
+    camera_code = await _cmd(node, "camera/set", "on")
+    if wake_code != 200 or camera_code != 200:
+        return (
+            "wake failed: bridge returned wake HTTP %s, camera HTTP %s"
+            % (wake_code, camera_code)
+        )
+
+    try:
+        await _snapshot(node, wait_fresh=WAKE_FRESH_TIMEOUT)
+    except RuntimeError as exc:
+        return "wake requested, but live camera is not fresh yet: %s" % exc
+    return "awake — fresh live camera frame confirmed; ebo_look/ebo_watch are ready."
 
 
 @mcp.tool()
