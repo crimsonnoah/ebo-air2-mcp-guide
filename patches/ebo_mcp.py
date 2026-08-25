@@ -500,7 +500,10 @@ async def ebo_listen(node: str = "", on: bool = True) -> str:
     return f"listen -> {'on' if on else 'off'}."
 
 
-FISH_CONFIG = os.environ.get("FISH_AUDIO_CONFIG", "/data/fishaudio-config.json")
+TTS_CONFIG = os.environ.get("EBO_TTS_CONFIG", "/data/ebo-tts-config.json")
+LEGACY_FISH_CONFIG = os.environ.get(
+    "FISH_AUDIO_CONFIG", "/data/fishaudio-config.json"
+)
 SPEAKING_UNTIL = os.environ.get("EBO_SPEAKING_UNTIL", "/data/ebo-speaking-until")
 _say_lock = asyncio.Lock()
 
@@ -510,13 +513,29 @@ def _set_speaking_until(deadline: float) -> None:
         f.write(str(deadline))
 
 
-async def _fish_tts_wav(text: str) -> str:
-    try:
-        with open(FISH_CONFIG, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except Exception as exc:
-        raise RuntimeError(f"cannot read Fish Audio config: {exc}") from exc
+def _save_tts_wav(data: bytes) -> str:
+    if not data.startswith(b"RIFF"):
+        raise RuntimeError("TTS provider returned data that is not a WAV file")
+    output = f"/data/ebo-tts-{time.time_ns()}.wav"
+    with open(output, "wb") as f:
+        f.write(data)
+    os.chmod(output, 0o600)
 
+    now = time.time()
+    try:
+        for name in os.listdir("/data"):
+            if not name.startswith("ebo-tts-") or not name.endswith(".wav"):
+                continue
+            candidate = os.path.join("/data", name)
+            if candidate != output and now - os.path.getmtime(candidate) > 86400:
+                os.remove(candidate)
+    except OSError:
+        pass
+    return output
+
+
+async def _fish_audio_tts_wav(text: str, config: dict) -> str:
+    """Built-in compatibility provider for existing Fish Audio installs."""
     endpoint = config.get("endpoint", "https://api.fish.audio/v1/tts")
     api_key = config.get("api_key", "")
     model = config.get("model", "s2.1-pro-free")
@@ -547,24 +566,98 @@ async def _fish_tts_wav(text: str) -> str:
         raise RuntimeError(
             f"Fish Audio TTS failed ({response.status_code}): {response.text[:500]}"
         )
-    if not response.content.startswith(b"RIFF"):
-        raise RuntimeError("Fish Audio returned data that is not a WAV file")
+    return _save_tts_wav(response.content)
 
-    output = f"/data/ebo-tts-{time.time_ns()}.wav"
-    with open(output, "wb") as f:
-        f.write(response.content)
 
-    now = time.time()
+async def _command_tts_wav(text: str, config: dict) -> str:
+    """Run a vendor adapter that accepts JSON on stdin and prints a WAV path."""
+    command = config.get("command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) and item for item in command)
+    ):
+        raise RuntimeError(
+            "command TTS provider requires a non-empty JSON string array named 'command'"
+        )
+    timeout = max(5.0, min(float(config.get("timeout", 120.0)), 300.0))
+    request = json.dumps(
+        {"text": text, "format": "wav", "sample_rate": 16000},
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
     try:
-        for name in os.listdir("/data"):
-            if not name.startswith("ebo-tts-") or not name.endswith(".wav"):
-                continue
-            candidate = os.path.join("/data", name)
-            if candidate != output and now - os.path.getmtime(candidate) > 86400:
-                os.remove(candidate)
-    except OSError:
-        pass
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(request), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.communicate()
+        raise RuntimeError("command TTS provider timed out")
+    if process.returncode != 0:
+        detail = stderr.decode("utf-8", "replace").strip()[-600:]
+        raise RuntimeError(
+            "command TTS provider failed (exit %s): %s"
+            % (process.returncode, detail or "no error text")
+        )
+
+    lines = stdout.decode("utf-8", "replace").strip().splitlines()
+    if not lines:
+        raise RuntimeError("command TTS provider returned no WAV path")
+    output = lines[-1].strip()
+    if not os.path.isabs(output):
+        output = os.path.join("/data", output)
+    output = os.path.realpath(output)
+    if os.path.commonpath(["/data", output]) != "/data":
+        raise RuntimeError("command TTS provider WAV must be stored under /data")
+    try:
+        with open(output, "rb") as f:
+            header = f.read(4)
+    except OSError as exc:
+        raise RuntimeError(f"cannot read command TTS WAV: {exc}") from exc
+    if header != b"RIFF":
+        raise RuntimeError(
+            "command TTS provider output must be a 16 kHz mono PCM WAV"
+        )
     return output
+
+
+async def _tts_wav(text: str) -> tuple[str, str]:
+    """Resolve the configured provider without coupling ebo_say to one vendor."""
+    if os.path.exists(TTS_CONFIG):
+        try:
+            with open(TTS_CONFIG, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except Exception as exc:
+            raise RuntimeError(f"cannot read TTS config: {exc}") from exc
+
+        provider = str(config.get("provider", "")).strip().lower()
+        if provider == "command":
+            return await _command_tts_wav(text, config), "command"
+        if provider in ("fish", "fish_audio", "fishaudio"):
+            return await _fish_audio_tts_wav(text, config), "fish_audio"
+        raise RuntimeError(
+            "unsupported TTS provider %r; use 'command' or 'fish_audio'"
+            % provider
+        )
+
+    # Backward compatibility: existing users keep speaking without changing
+    # their private /data/fishaudio-config.json.
+    try:
+        with open(LEGACY_FISH_CONFIG, "r", encoding="utf-8") as f:
+            legacy = json.load(f)
+    except Exception as exc:
+        raise RuntimeError(
+            "no TTS provider configured; create /data/ebo-tts-config.json "
+            "or keep a valid /data/fishaudio-config.json: %s" % exc
+        ) from exc
+    return await _fish_audio_tts_wav(text, legacy), "fish_audio"
 
 
 async def _ensure_talk_channel(robot: dict, node: str) -> None:
@@ -580,7 +673,7 @@ async def _ensure_talk_channel(robot: dict, node: str) -> None:
 
 @mcp.tool()
 async def ebo_say(node: str = "", text: str = "") -> str:
-    """Speak through the robot using Fish Audio TTS and the RTC talk channel."""
+    """Speak through EBO using the configured TTS provider and RTC talk channel."""
     text = text.strip()
     if not text:
         return "nothing to say."
@@ -597,8 +690,12 @@ async def ebo_say(node: str = "", text: str = "") -> str:
         await _ensure_talk_channel(robot, node)
         print(f"[say-timing] +{time.monotonic()-started:.3f}s talk channel ready", flush=True)
 
-        wav_path = await _fish_tts_wav(text)
-        print(f"[say-timing] +{time.monotonic()-started:.3f}s Fish Audio WAV ready", flush=True)
+        wav_path, tts_provider = await _tts_wav(text)
+        print(
+            f"[say-timing] +{time.monotonic()-started:.3f}s "
+            f"TTS WAV ready provider={tts_provider}",
+            flush=True,
+        )
         pcm_bytes = max(0, os.path.getsize(wav_path) - 44)
         duration = min(pcm_bytes / (16000 * 2), 120.0)
         _set_speaking_until(time.time() + duration + 2.0)
@@ -610,7 +707,7 @@ async def ebo_say(node: str = "", text: str = "") -> str:
         await asyncio.sleep(duration + 1.0)
         _set_speaking_until(time.time() + 1.0)
 
-    return f"spoke via Fish Audio: {text!r}"
+    return f"spoke via {tts_provider} TTS: {text!r}"
 
 
 _ACTION_IDS = {
