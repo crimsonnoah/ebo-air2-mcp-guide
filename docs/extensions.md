@@ -5,6 +5,7 @@ This directory adds the features verified during the EBO Air 2 project:
 - movement caps of speed 80 and 30 seconds
 - reliable three-frame software stop
 - persistent photos with an immediate image preview
+- persistent continuous MP4 recording from the live RTSP stream
 - short ordered-frame observation for visual change detection
 - ten single-cycle Skill Actions
 - twelve Skill Expressions
@@ -78,6 +79,30 @@ written privately to `/data/ebo-photos/`, which corresponds to
 container rebuilds and are already covered by the repository's `data/` ignore
 rule. This captures the current live JPEG on the server; it does not add the
 photo to EBO HOME or the robot's SD-card album.
+
+### Recording continuous video
+
+Use `ebo_record` when the goal is to keep a real continuous video rather
+than ask the AI to compare sampled still frames:
+
+```text
+ebo_record(node="ebo", seconds=10, label="optional-memory-name", include_audio=true)
+```
+
+Recordings default to 10 seconds and are capped at 30 seconds by
+`EBO_RECORD_MAX_SECONDS`. They are stored privately under
+`/data/ebo-recordings/` (normally `./data/ebo-recordings/` on the
+Compose host), survive container rebuilds, and are not uploaded to EBO HOME or
+the robot's SD card. The tool copies the existing H.264 video stream without
+re-encoding; when an audio track exists and `include_audio` is true, it is
+converted to AAC for broad MP4 compatibility. A JPEG cover preview is returned
+with the saved path and file size.
+
+Call `ebo_wake` first. Recording refuses a known stale pre-wake frame and
+also refuses when the camera or RTSP stream is unavailable. The MP4 itself is a
+saved artifact for people or downstream video-capable software; use
+`ebo_watch` when the current AI client needs to reason about motion through an
+ordered set of images.
 
 ### Watching short changes
 
