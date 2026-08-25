@@ -471,6 +471,29 @@ async def ebo_dock(node: str = "") -> str:
 
 
 @mcp.tool()
+async def ebo_volume(level: int, node: str = "") -> str:
+    """Set EBO's speaker/playback volume.
+
+    level must be an explicit integer from 0 (silent) to 100 (maximum).
+    This changes playbackVolume, which controls ebo_say and other sounds; it
+    does not change the separate microphone/talkback listening volume.
+    """
+    try:
+        value = int(level)
+    except (TypeError, ValueError):
+        return "invalid volume; level must be an integer from 0 to 100."
+    if value < 0 or value > 100:
+        return "invalid volume; level must be between 0 and 100."
+
+    robots = await _robots()
+    node = _node(robots, node)
+    code = await _cmd(node, "volume/set", str(value))
+    if code != 200:
+        return "volume failed: bridge returned HTTP %s." % code
+    return "speaker volume -> %d/100." % value
+
+
+@mcp.tool()
 async def ebo_night_vision(node: str = "", mode: str = "Auto") -> str:
     """Set day/night vision: mode ∈ {Auto, Day, Night}."""
     robots = await _robots()
