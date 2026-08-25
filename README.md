@@ -19,7 +19,7 @@
 
 目前已验证：
 
-- 摄像头查看、唤醒后新鲜帧验证、短时连续观察（实机确认可识别手势变化）、照片保存与机器人状态读取
+- 摄像头查看、唤醒后新鲜帧验证、短时连续观察（实机确认可识别手势变化）、照片与连续 MP4 录像保存、机器人状态读取
 - 自主移动：方向、速度与单次移动时长
 - 停止普通轮式移动
 - 10 种单次 Skill Actions
@@ -102,7 +102,7 @@
 
 This repository documents a tested community setup for connecting MCP-compatible AI clients to an **Enabot EBO Air 2** through a token-protected bridge.
 
-Verified capabilities include camera snapshots with post-wake freshness verification, live-tested ordered-frame gesture-change observation, persistent photo saving, state access, adjustable movement, normal movement stop, ten single-cycle Skill Actions, twelve official expressions, local faster-whisper ASR, and Fish Audio TTS playback through EBO.
+Verified capabilities include camera snapshots with post-wake freshness verification, live-tested ordered-frame gesture-change observation, persistent photo and continuous MP4 recording, state access, adjustable movement, normal movement stop, ten single-cycle Skill Actions, twelve official expressions, local faster-whisper ASR, and Fish Audio TTS playback through EBO.
 
 ### Compatibility
 
