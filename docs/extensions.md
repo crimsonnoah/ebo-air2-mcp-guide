@@ -96,7 +96,8 @@ Compose host), survive container rebuilds, and are not uploaded to EBO HOME or
 the robot's SD card. The tool copies the existing H.264 video stream without
 re-encoding; when an audio track exists and `include_audio` is true, it is
 converted to AAC for broad MP4 compatibility. A JPEG cover preview is returned
-with the saved path and file size.
+with the saved path and file size. Live Air 2 validation produced a 10.03-second
+MP4 containing both an H.264 video stream and an AAC audio stream.
 
 Call `ebo_wake` first. Recording refuses a known stale pre-wake frame and
 also refuses when the camera or RTSP stream is unavailable. The MP4 itself is a
