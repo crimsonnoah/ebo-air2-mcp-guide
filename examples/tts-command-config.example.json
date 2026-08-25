@@ -1,0 +1,5 @@
+{
+  "provider": "command",
+  "command": ["python3", "/data/tts-provider.py"],
+  "timeout": 120
+}
